@@ -38,6 +38,10 @@ private:
 	const int m_step;                       // Step size (space between voxels)
 
 	std::vector<cv::Point3f*> m_corners;    // Cube half-space corner locations
+	std::vector<cv::Point3f*> m_trails0;    // Clusters centers locations
+	std::vector<cv::Point3f*> m_trails1;    // Clusters centers locations
+	std::vector<cv::Point3f*> m_trails2;    // Clusters centers locations
+	std::vector<cv::Point3f*> m_trails3;    // Clusters centers locations
 
 	size_t m_voxels_amount;                 // Voxel count
 	cv::Size m_plane_size;                  // Camera FoV plane WxH
@@ -76,9 +80,30 @@ public:
 		m_voxels = voxels;
 	}
 
+
 	const std::vector<cv::Point3f*>& getCorners() const
 	{
 		return m_corners;
+	}
+
+	std::vector<cv::Point3f*>& getTrails0() 
+	{
+		return m_trails0;
+	}
+
+	std::vector<cv::Point3f*>& getTrails1()
+	{
+		return m_trails1;
+	}
+
+	std::vector<cv::Point3f*>& getTrails2()
+	{
+		return m_trails2;
+	}
+
+	std::vector<cv::Point3f*>& getTrails3()
+	{
+		return m_trails3;
 	}
 
 	int getSize() const

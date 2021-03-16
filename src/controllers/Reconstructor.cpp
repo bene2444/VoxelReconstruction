@@ -35,7 +35,7 @@ namespace nl_uu_science_gmt
 	vector<Mat> histograms0;
 	vector<Mat> histograms1;
 	vector<vector<Point2f>> positionOverTime;
-	vector<vector<Point3f>> centersOverTime;
+	//vector<vector<Point3f>> centersOverTime;
 	int frame = 0;
 	bool online = true;
 
@@ -46,7 +46,7 @@ namespace nl_uu_science_gmt
 	Reconstructor::Reconstructor(
 		const vector<Camera*>& cs) :
 		m_cameras(cs),
-		m_height(512),
+		m_height(2560),
 		m_step(32)
 	{
 		for (size_t c = 0; c < m_cameras.size(); ++c)
@@ -166,7 +166,6 @@ namespace nl_uu_science_gmt
 		vector<Point3f> position3f;
 		for (int i = 0; i < 4; i++) {
 			positionOverTime.push_back(position2f);
-			centersOverTime.push_back(position3f);
 		}
 		cout << "done!" << endl;
 
@@ -214,9 +213,9 @@ namespace nl_uu_science_gmt
 		Mat outFrame;
 
 		frame_rgb.copyTo(outFrame, mask);
-		//imshow("mask", mask);
-		//imshow("Display window", outFrame);
-		//imshow("hsv", frame_hsv);
+		imshow("mask", mask);
+		imshow("Display window", outFrame);
+		imshow("hsv", frame_hsv);
 
 		//waitKey(0);
 
@@ -362,13 +361,10 @@ namespace nl_uu_science_gmt
 		clusterVoxelProjected1.clear();
 		for (int i = 0; i < 4; i++)
 		{
-
 			clusterVoxelProjected0.push_back(clusterCoordinates);
 			clusterVoxelProjected1.push_back(clusterCoordinates);
 		}
 		
-		
-
 
 		//for (int i : distanceOrderedClusters0)
 		for(int i=0; i<4;i++)
@@ -379,12 +375,12 @@ namespace nl_uu_science_gmt
 					if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == base)
 					{
 						cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected0[i].push_back(voxelProjected0[j]);
+						clusterVoxelProjected0[distanceOrderedClusters0[i]].push_back(voxelProjected0[j]);
 					}
 					if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == base)
 					{
 						cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected1[i].push_back(voxelProjected1[j]);
+						clusterVoxelProjected1[distanceOrderedClusters1[i]].push_back(voxelProjected1[j]);
 					}
 				}
 			}
@@ -394,7 +390,7 @@ namespace nl_uu_science_gmt
 					if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == base)
 					{
 						cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected0[i].push_back(voxelProjected0[j]);
+						clusterVoxelProjected0[distanceOrderedClusters0[i]].push_back(voxelProjected0[j]);
 					}
 				}
 				for (int j : visibleVoxelLabel[distanceOrderedClusters1[i]])
@@ -402,11 +398,10 @@ namespace nl_uu_science_gmt
 					if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == base)
 					{
 						cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected1[i].push_back(voxelProjected1[j]);
+						clusterVoxelProjected1[distanceOrderedClusters1[i]].push_back(voxelProjected1[j]);
 					}
 				}
-			}
-			
+			}	
 			
 		}
 
@@ -442,6 +437,7 @@ namespace nl_uu_science_gmt
 			double distance0;
 			double distance1;
 			int correspondingLabel[4];
+			int correspondingLabelReverse[4];
 			vector<double> distance;
 			vector<vector<double>> distances;
 			vector<int> unavailableLabels;
@@ -474,6 +470,7 @@ namespace nl_uu_science_gmt
 					{
 						unavailableLabels.push_back(minElementIndex);
 						correspondingLabel[minElementIndex] = i;
+						correspondingLabelReverse[i] = minElementIndex;
 						found = true;
 					}
 					else {
@@ -482,10 +479,13 @@ namespace nl_uu_science_gmt
 				}
 			}
 
-			for (int i = 0; i < 4; i++) {
-				positionOverTime[correspondingLabel[i]].push_back(centers[i]);
-				centersOverTime[correspondingLabel[i]].push_back(Point3f(centers[i].x, centers[i].y, 3));
-			}
+			
+
+			m_trails0.push_back(new Point3f(centers[correspondingLabelReverse[0]].x, centers[correspondingLabelReverse[0]].y, 3));
+			m_trails1.push_back(new Point3f(centers[correspondingLabelReverse[1]].x, centers[correspondingLabelReverse[1]].y, 3));
+			m_trails2.push_back(new Point3f(centers[correspondingLabelReverse[2]].x, centers[correspondingLabelReverse[2]].y, 3));
+			m_trails3.push_back(new Point3f(centers[correspondingLabelReverse[3]].x, centers[correspondingLabelReverse[3]].y, 3));
+
 
 			FileStorage fs("positionOverTime.yml", FileStorage::WRITE);
 			fs << "pos" + string(to_string(frame)) << positionOverTime;

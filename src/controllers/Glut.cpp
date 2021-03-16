@@ -554,6 +554,7 @@ void Glut::display()
 		drawArcball();
 
 	drawVoxels();
+	drawTrails();
 
 	if (scene3d.isShowOrg())
 		drawWCoord();
@@ -693,6 +694,64 @@ void Glut::drawGrdGrid()
 	glEnd();
 	glPopMatrix();
 }
+
+
+void Glut::drawTrails()
+{
+	// std::vector<cv::Point3f*> t0 = m_Glut->getScene3d().getReconstructor().getTrails0();
+	glPushMatrix();
+
+	// apply default translation
+	glTranslatef(0, 0, 0);
+	glPointSize(4.0f);
+	glBegin(GL_POINTS);
+	int r, b, g;
+//	vector<Reconstructor::Voxel*> voxels = m_Glut->getScene3d().getReconstructor().getVisibleVoxels();
+	std::vector<cv::Point3f*> t0 = m_Glut->getScene3d().getReconstructor().getTrails0();
+	std::vector<cv::Point3f*> t1 = m_Glut->getScene3d().getReconstructor().getTrails1();
+	std::vector<cv::Point3f*> t2 = m_Glut->getScene3d().getReconstructor().getTrails2();
+	std::vector<cv::Point3f*> t3 = m_Glut->getScene3d().getReconstructor().getTrails3();
+
+	for (size_t v = 0; v < t0.size(); v++)
+	{
+		r = 255;
+		g = 0;
+		b = 0;
+
+		glColor3f(r, g, b);
+		//glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
+		glVertex3f((GLfloat)t0[v]->x, (GLfloat)t0[v]->y, (GLfloat)t0[v]->z);
+
+		r = 255;
+		g = 255;
+		b = 0;
+
+		glColor3f(r, g, b);
+		//glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
+		glVertex3f((GLfloat)t1[v]->x, (GLfloat)t1[v]->y, (GLfloat)t1[v]->z);
+
+		r = 255;
+		g = 0;
+		b = 255;
+
+		glColor3f(r, g, b);
+		//glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
+		glVertex3f((GLfloat)t2[v]->x, (GLfloat)t2[v]->y, (GLfloat)t2[v]->z);
+
+		r = 0;
+		g = 0;
+		b = 255;
+
+		glColor3f(r, g, b);
+		//glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
+		glVertex3f((GLfloat)t3[v]->x, (GLfloat)t3[v]->y, (GLfloat)t3[v]->z);
+	}
+
+	glEnd();
+	glPopMatrix();
+}
+
+
 
 /**
  * Draw the cameras
