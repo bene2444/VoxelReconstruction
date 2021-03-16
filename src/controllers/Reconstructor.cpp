@@ -35,6 +35,7 @@ namespace nl_uu_science_gmt
 	vector<Mat> histograms0;
 	vector<Mat> histograms1;
 	vector<vector<Point2f>> positionOverTime;
+	vector<vector<Point3f>> centersOverTime;
 	int frame = 0;
 	bool online = true;
 
@@ -161,9 +162,11 @@ namespace nl_uu_science_gmt
 				}
 			}
 		}
-		vector<Point2f> position;
+		vector<Point2f> position2f;
+		vector<Point3f> position3f;
 		for (int i = 0; i < 4; i++) {
-			positionOverTime.push_back(position);
+			positionOverTime.push_back(position2f);
+			centersOverTime.push_back(position3f);
 		}
 		cout << "done!" << endl;
 
@@ -298,7 +301,7 @@ namespace nl_uu_science_gmt
 
 
 		kmeans(voxels2dCoordinates, 4, labels, TermCriteria(CV_TERMCRIT_EPS, 100, 0.01), 8, KMEANS_RANDOM_CENTERS, centers);
-		//trying to deal with occlusions
+		// calculate distance between clusters and cameras
 		Point3f pos0 = m_cameras[0]->getCameraLocation();
 		Point3f pos1 = m_cameras[1]->getCameraLocation();
 		vector<double> centerCamera0Distance;
@@ -332,10 +335,16 @@ namespace nl_uu_science_gmt
 			visibleVoxelLabel[labels[i]].push_back(int(i));
 		}
 		//still trying to deal with occlusions
-		vector<int> y(centerCamera0Distance.size());
-		iota(y.begin(), y.end(), 0);
+		vector<int> distanceOrderedClusters0(centerCamera0Distance.size());
+		iota(distanceOrderedClusters0.begin(), distanceOrderedClusters0.end(), 0);
 		auto comparator = [&centerCamera0Distance](int a, int b) { return centerCamera0Distance[a] < centerCamera0Distance[b]; };
-		sort(y.begin(), y.end(), comparator);
+		sort(distanceOrderedClusters0.begin(), distanceOrderedClusters0.end(), comparator);
+
+		//still trying to deal with occlusions
+		vector<int> distanceOrderedClusters1(centerCamera1Distance.size());
+		iota(distanceOrderedClusters1.begin(), distanceOrderedClusters1.end(), 0);
+		auto comparator1 = [&centerCamera1Distance](int a, int b) { return centerCamera1Distance[a] < centerCamera1Distance[b]; };
+		sort(distanceOrderedClusters1.begin(), distanceOrderedClusters1.end(), comparator1);
 
 		vector<Point2f> clusterCoordinates;
 		clusterCoordinates.clear();
@@ -361,23 +370,44 @@ namespace nl_uu_science_gmt
 		
 
 
-		for (int i : y)
-		//for(int i=0; i<4;i++)
+		//for (int i : distanceOrderedClusters0)
+		for(int i=0; i<4;i++)
 		{
-
-			for (int j : visibleVoxelLabel[i])
-			{
-				if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == base)
+			if (distanceOrderedClusters0[i] == distanceOrderedClusters1[i]) {
+				for (int j : visibleVoxelLabel[distanceOrderedClusters0[i]])
 				{
-					cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200,200,200);
-					clusterVoxelProjected0[i].push_back(voxelProjected0[j]);
-				}
-				if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == base)
-				{
-					cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
-					clusterVoxelProjected1[i].push_back(voxelProjected1[j]);
+					if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == base)
+					{
+						cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200, 200, 200);
+						clusterVoxelProjected0[i].push_back(voxelProjected0[j]);
+					}
+					if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == base)
+					{
+						cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
+						clusterVoxelProjected1[i].push_back(voxelProjected1[j]);
+					}
 				}
 			}
+			else {
+				for (int j : visibleVoxelLabel[distanceOrderedClusters0[i]])
+				{
+					if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == base)
+					{
+						cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200, 200, 200);
+						clusterVoxelProjected0[i].push_back(voxelProjected0[j]);
+					}
+				}
+				for (int j : visibleVoxelLabel[distanceOrderedClusters1[i]])
+				{
+					if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == base)
+					{
+						cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
+						clusterVoxelProjected1[i].push_back(voxelProjected1[j]);
+					}
+				}
+			}
+			
+			
 		}
 
 		if (!online) {
@@ -454,6 +484,7 @@ namespace nl_uu_science_gmt
 
 			for (int i = 0; i < 4; i++) {
 				positionOverTime[correspondingLabel[i]].push_back(centers[i]);
+				centersOverTime[correspondingLabel[i]].push_back(Point3f(centers[i].x, centers[i].y, 3));
 			}
 
 			FileStorage fs("positionOverTime.yml", FileStorage::WRITE);
