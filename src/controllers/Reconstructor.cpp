@@ -25,17 +25,24 @@ namespace nl_uu_science_gmt
 	vector<Point2f> voxels2dCoordinates;
 	vector<Point2f> voxelProjected0;
 	vector<Point2f> voxelProjected1;
-	vector<vector<Point2f>> clusterVoxelProjected0;
-	vector<vector<Point2f>> clusterVoxelProjected1;
-	vector<vector<int>> visibleVoxelLabel;
+	vector<Point2f> voxelProjected2;
+	vector<Point2f> voxelProjected3;
+	vector<vector<Point2f>> projected_voxels_by_cluster0;
+	vector<vector<Point2f>> projected_voxels_by_cluster1;
+	vector<vector<Point2f>> projected_voxels_by_cluster2;
+	vector<vector<Point2f>> projected_voxels_by_cluster3;
+	vector<vector<int>> visible_voxels_by_label;
 	vector<Point2f> centers;
 	vector<int> labels;
 	vector<Mat> offlineHistograms0;
 	vector<Mat> offlineHistograms1;
+	vector<Mat> offlineHistograms2;
+	vector<Mat> offlineHistograms3;
 	vector<Mat> histograms0;
 	vector<Mat> histograms1;
+	vector<Mat> histograms2;
+	vector<Mat> histograms3;
 	vector<vector<Point2f>> positionOverTime;
-	//vector<vector<Point3f>> centersOverTime;
 	int frame = 0;
 	bool online = true;
 
@@ -171,26 +178,49 @@ namespace nl_uu_science_gmt
 
 		if (online)
 		{
-			for (int i = 0; i < 4; i++)
-			{
-				FileStorage fs("histogram" + string(to_string(i)) + ".yml", FileStorage::READ);
-				Mat hist;
-				fs["hist"] >> hist;
-				fs.release();
+			ReadHistograms();
+		}
+	}
 
-				offlineHistograms0.push_back(hist);
-			}
-			for (int i = 10; i < 14; i++)
-			{
-				FileStorage fs("histogram" + string(to_string(i)) + ".yml", FileStorage::READ);
-				Mat hist;
-				fs["hist"] >> hist;
-				fs.release();
+	void Reconstructor::ReadHistograms()
+	{
+		for (int i = 0; i < 4; i++)
+		{
+			FileStorage fs("histogram" + string(to_string(i)) + ".yml", FileStorage::READ);
+			Mat hist;
+			fs["hist"] >> hist;
+			fs.release();
 
-				offlineHistograms1.push_back(hist);
-			}
+			offlineHistograms0.push_back(hist);
+		}
+		for (int i = 10; i < 14; i++)
+		{
+			FileStorage fs("histogram" + string(to_string(i)) + ".yml", FileStorage::READ);
+			Mat hist;
+			fs["hist"] >> hist;
+			fs.release();
 
+			offlineHistograms1.push_back(hist);
+		}
 
+		for (int i = 20; i < 24; i++)
+		{
+			FileStorage fs("histogram" + string(to_string(i)) + ".yml", FileStorage::READ);
+			Mat hist;
+			fs["hist"] >> hist;
+			fs.release();
+
+			offlineHistograms2.push_back(hist);
+		}
+
+		for (int i = 30; i < 34; i++)
+		{
+			FileStorage fs("histogram" + string(to_string(i)) + ".yml", FileStorage::READ);
+			Mat hist;
+			fs["hist"] >> hist;
+			fs.release();
+
+			offlineHistograms3.push_back(hist);
 		}
 	}
 
@@ -222,7 +252,6 @@ namespace nl_uu_science_gmt
 		int h_bins = 70;
 		int s_bins = 30;
 
-
 		int histSize[] = { h_bins, s_bins };
 
 		float h_ranges[] = { 0, 180 };
@@ -244,10 +273,6 @@ namespace nl_uu_science_gmt
 		return hist;
 	}
 
-
-
-
-
 	/**
 	 * Count the amount of camera's each voxel in the space appears on,
 	 * if that amount equals the amount of cameras, add that voxel to the
@@ -255,95 +280,40 @@ namespace nl_uu_science_gmt
 	 */
 	void Reconstructor::update()
 	{
+		ClearVectors();
 		frame += 1;
-		voxels2dCoordinates.clear();
-		voxelProjected0.clear();
-		voxelProjected1.clear();
-		m_visible_voxels.clear();
-		visibleVoxelLabel.clear();
-		histograms0.clear();
-		histograms1.clear();
-		std::vector<Voxel*> visible_voxels;
-
-		int v;
-#pragma omp parallel for schedule(static) private(v) shared(visible_voxels)
-		for (v = 0; v < (int)m_voxels_amount; ++v)
-		{
-			int camera_counter = 0;
-			Voxel* voxel = m_voxels[v];
-
-			for (size_t c = 0; c < m_cameras.size(); ++c)
-			{
-				if (voxel->valid_camera_projection[c])
-				{
-					const Point point = voxel->camera_projection[c];
-
-					//If there's a white pixel on the foreground image at the projection point, add the camera
-					if (m_cameras[c]->getForegroundImage().at<uchar>(point) == 255) ++camera_counter;
-				}
-			}
-
-			// If the voxel is present on all cameras
-			if (camera_counter == m_cameras.size())
-			{
-#pragma omp critical //push_back is critical
-				visible_voxels.push_back(voxel);
-				voxels2dCoordinates.push_back(Point2f(voxel->x, voxel->y));
-
-				voxelProjected0.push_back(m_cameras[0]->projectOnView(Point3f(voxel->x, voxel->y, voxel->z)));
-				voxelProjected1.push_back(m_cameras[1]->projectOnView(Point3f(voxel->x, voxel->y, voxel->z)));
-
-
-
-			}
-		}
-
+		vector<Voxel*> visible_voxels = determineVisibleVoxels();
 
 		kmeans(voxels2dCoordinates, 4, labels, TermCriteria(CV_TERMCRIT_EPS, 100, 0.01), 8, KMEANS_RANDOM_CENTERS, centers);
-		// calculate distance between clusters and cameras
-		Point3f pos0 = m_cameras[0]->getCameraLocation();
-		Point3f pos1 = m_cameras[1]->getCameraLocation();
-		vector<double> centerCamera0Distance;
-		vector<double> centerCamera1Distance;
-		for (int i = 0; i < 4; i++)
-		{
-			centerCamera0Distance.push_back(norm(pos0 - Point3f(centers[i].x, centers[i].y, 0)));
-		}
-		for (int i = 0; i < 4; i++)
-		{
-			centerCamera1Distance.push_back(norm(pos1 - Point3f(centers[i].x, centers[i].y, 0)));
-		}
 
+		vector<double> camera0_distances_to_centers = getDistancesFromCameraToCenters(0);
+		vector<double> camera1_distances_to_centers = getDistancesFromCameraToCenters(1);
+		vector<double> camera2_distances_to_centers = getDistancesFromCameraToCenters(2);
+		vector<double> camera3_distances_to_centers = getDistancesFromCameraToCenters(3);
 
-		Mat frame_rgb0 = m_cameras[0]->getFrame();
-		Mat frame_rgb1 = m_cameras[1]->getFrame();
-		Mat frame_hsv0;
-		Mat frame_hsv1;
-		cvtColor(frame_rgb0, frame_hsv0, COLOR_BGR2HSV);
-		cvtColor(frame_rgb1, frame_hsv1, COLOR_BGR2HSV);
+		Mat frame_rgb0, frame_hsv0, frame_rgb1, frame_hsv1, frame_rgb2, frame_hsv2, frame_rgb3, frame_hsv3;
+		tie(frame_rgb0, frame_hsv0) = getFrameColorValues(0);
+		tie(frame_rgb1, frame_hsv1) = getFrameColorValues(1);
+		tie(frame_rgb2, frame_hsv2) = getFrameColorValues(2);
+		tie(frame_rgb3, frame_hsv3) = getFrameColorValues(3);
+
 		//initialize vector of vectors
 		for (int i = 0; i < 4; i++)
 		{
 			vector<int> label;
-			visibleVoxelLabel.push_back(label);
+			visible_voxels_by_label.push_back(label);
 		}
 
 		for (int i = 0; i < visible_voxels.size(); i++)
 		{
 			visible_voxels[i]->label = labels[i];
-			visibleVoxelLabel[labels[i]].push_back(int(i));
+			visible_voxels_by_label[labels[i]].push_back(i);
 		}
-		//still trying to deal with occlusions
-		vector<int> distanceOrderedClusters0(centerCamera0Distance.size());
-		iota(distanceOrderedClusters0.begin(), distanceOrderedClusters0.end(), 0);
-		auto comparator = [&centerCamera0Distance](int a, int b) { return centerCamera0Distance[a] < centerCamera0Distance[b]; };
-		sort(distanceOrderedClusters0.begin(), distanceOrderedClusters0.end(), comparator);
 
-		//still trying to deal with occlusions
-		vector<int> distanceOrderedClusters1(centerCamera1Distance.size());
-		iota(distanceOrderedClusters1.begin(), distanceOrderedClusters1.end(), 0);
-		auto comparator1 = [&centerCamera1Distance](int a, int b) { return centerCamera1Distance[a] < centerCamera1Distance[b]; };
-		sort(distanceOrderedClusters1.begin(), distanceOrderedClusters1.end(), comparator1);
+		vector<int> clusters_ordered_by_distance0 = get_ordered_clusters(camera0_distances_to_centers);
+		vector<int> clusters_ordered_by_distance1 = get_ordered_clusters(camera1_distances_to_centers);
+		vector<int> clusters_ordered_by_distance2 = get_ordered_clusters(camera2_distances_to_centers);
+		vector<int> clusters_ordered_by_distance3 = get_ordered_clusters(camera3_distances_to_centers);
 
 		vector<Point2f> clusterCoordinates;
 		clusterCoordinates.clear();
@@ -351,108 +321,171 @@ namespace nl_uu_science_gmt
 		cameraShot0.setTo(cv::Scalar(0, 0, 0));
 		Mat cameraShot1 = frame_rgb1.clone();
 		cameraShot1.setTo(cv::Scalar(0, 0, 0));
-		Vec3b base = cameraShot0.at<Vec3b>(voxelProjected0.at(1));
+		Mat cameraShot2 = frame_rgb2.clone();
+		cameraShot2.setTo(cv::Scalar(0, 0, 0));
+		Mat cameraShot3 = frame_rgb3.clone();
+		cameraShot3.setTo(cv::Scalar(0, 0, 0));
+		Vec3b black = cameraShot0.at<Vec3b>(voxelProjected0.at(1));
 
-		/*imshow("bw", cameraShot0);
-		waitKey(0);
-		imshow("bw1", cameraShot1);
-		waitKey(0);*/
-		clusterVoxelProjected0.clear();
-		clusterVoxelProjected1.clear();
 		for (int i = 0; i < 4; i++)
 		{
-			clusterVoxelProjected0.push_back(clusterCoordinates);
-			clusterVoxelProjected1.push_back(clusterCoordinates);
+			projected_voxels_by_cluster0.push_back(clusterCoordinates);
+			projected_voxels_by_cluster1.push_back(clusterCoordinates);
+			projected_voxels_by_cluster2.push_back(clusterCoordinates);
+			projected_voxels_by_cluster3.push_back(clusterCoordinates);
 		}
-		
 
-		//for (int i : distanceOrderedClusters0)
-		for(int i=0; i<4;i++)
+		for (int i = 0; i < 4; i++)
 		{
-			if (distanceOrderedClusters0[i] == distanceOrderedClusters1[i]) {
-				for (int j : visibleVoxelLabel[distanceOrderedClusters0[i]])
+			/*for (int voxel_index : visible_voxels_by_label[clusters_ordered_by_distance0[i]])
+			{
+				int cluster = clusters_ordered_by_distance0[i];
+				AddToProjection(cameraShot0, voxelProjected0[voxel_index], projected_voxels_by_cluster0[cluster], black);
+			}*/
+			for (int j : visible_voxels_by_label[clusters_ordered_by_distance0[i]])
+			{
+				if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == black)
 				{
-					if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == base)
-					{
-						cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected0[distanceOrderedClusters0[i]].push_back(voxelProjected0[j]);
-					}
-					if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == base)
-					{
-						cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected1[distanceOrderedClusters1[i]].push_back(voxelProjected1[j]);
-					}
+					cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200, 200, 200);
+					projected_voxels_by_cluster0[clusters_ordered_by_distance0[i]].push_back(voxelProjected0[j]);
 				}
 			}
-			else {
-				for (int j : visibleVoxelLabel[distanceOrderedClusters0[i]])
+			for (int j : visible_voxels_by_label[clusters_ordered_by_distance1[i]])
+			{
+				if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == black)
 				{
-					if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == base)
-					{
-						cameraShot0.at<Vec3b>(voxelProjected0.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected0[distanceOrderedClusters0[i]].push_back(voxelProjected0[j]);
-					}
+					cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
+					projected_voxels_by_cluster1[clusters_ordered_by_distance1[i]].push_back(voxelProjected1[j]);
 				}
-				for (int j : visibleVoxelLabel[distanceOrderedClusters1[i]])
+			}
+			for (int j : visible_voxels_by_label[clusters_ordered_by_distance2[i]])
+			{
+				if (cameraShot2.at<Vec3b>(voxelProjected2.at(j)) == black)
 				{
-					if (cameraShot1.at<Vec3b>(voxelProjected1.at(j)) == base)
-					{
-						cameraShot1.at<Vec3b>(voxelProjected1.at(j)) = Vec3b(200, 200, 200);
-						clusterVoxelProjected1[distanceOrderedClusters1[i]].push_back(voxelProjected1[j]);
-					}
+					cameraShot2.at<Vec3b>(voxelProjected2.at(j)) = Vec3b(200, 200, 200);
+projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelProjected2[j]);
 				}
-			}	
-			
+			}
+			for (int j : visible_voxels_by_label[clusters_ordered_by_distance3[i]])
+			{
+				if (cameraShot3.at<Vec3b>(voxelProjected3.at(j)) == black)
+				{
+					cameraShot3.at<Vec3b>(voxelProjected3.at(j)) = Vec3b(200, 200, 200);
+					projected_voxels_by_cluster3[clusters_ordered_by_distance3[i]].push_back(voxelProjected3[j]);
+				}
+			}
+		}
+
+		vector<double> doubVec;
+
+		vector<vector<double>> amountVisibleVoxelsPerCluster;
+		for (int i = 0; i < 4; i++) {
+			amountVisibleVoxelsPerCluster.push_back(doubVec);
 		}
 
 		if (!online) {
-			if (frame == 3) {
+			if (frame == 63) {
 				for (int i = 0; i < 4; i++)
 				{
-					size_t half_size = clusterVoxelProjected0[i].size() / 2;
-					vector<Point2f> halfClusterVoxelProjected0(clusterVoxelProjected0[i].begin() + half_size, clusterVoxelProjected0[i].end());
-					half_size = clusterVoxelProjected1[i].size() / 2;
-					vector<Point2f> halfClusterVoxelProjected1(clusterVoxelProjected1[i].begin() + half_size, clusterVoxelProjected1[i].end());
+					size_t half_size = projected_voxels_by_cluster0[i].size() / 2;
+					vector<Point2f> halfClusterVoxelProjected0(projected_voxels_by_cluster0[i].begin() + half_size, projected_voxels_by_cluster0[i].end());
+					half_size = projected_voxels_by_cluster1[i].size() / 2;
+					vector<Point2f> halfClusterVoxelProjected1(projected_voxels_by_cluster1[i].begin() + half_size, projected_voxels_by_cluster1[i].end());
 
 					histograms0.push_back(colorModel(halfClusterVoxelProjected0, frame_rgb0, frame_hsv0, i));
 					histograms1.push_back(colorModel(halfClusterVoxelProjected1, frame_rgb1, frame_hsv1, i + 10));
+				}
+			}
+			if (frame == 180) {
+				for (int i = 0; i < 4; i++)
+				{
+					size_t half_size = projected_voxels_by_cluster2[i].size() / 2;
+					vector<Point2f> halfClusterVoxelProjected2(projected_voxels_by_cluster2[i].begin() + half_size, projected_voxels_by_cluster2[i].end());
+					half_size = projected_voxels_by_cluster3[i].size() / 2;
+					vector<Point2f> halfClusterVoxelProjected3(projected_voxels_by_cluster3[i].begin() + half_size, projected_voxels_by_cluster3[i].end());
 
+					histograms2.push_back(colorModel(halfClusterVoxelProjected2, frame_rgb2, frame_hsv2, i + 20));
+				}
+			}
+
+			if (frame == 525) {
+				for (int i = 0; i < 4; i++)
+				{
+					size_t half_size = projected_voxels_by_cluster3[i].size() / 2;
+					vector<Point2f> halfClusterVoxelProjected3(projected_voxels_by_cluster3[i].begin() + half_size, projected_voxels_by_cluster3[i].end());
+
+					histograms3.push_back(colorModel(halfClusterVoxelProjected3, frame_rgb3, frame_hsv3, i + 30));
 				}
 			}
 		}
 		else {
 			for (int i = 0; i < 4; i++)
 			{
-				size_t half_size = clusterVoxelProjected0[i].size() / 2;
-				vector<Point2f> halfClusterVoxelProjected0(clusterVoxelProjected0[i].begin() + half_size, clusterVoxelProjected0[i].end());
-				half_size = clusterVoxelProjected1[i].size() / 2;
-				vector<Point2f> halfClusterVoxelProjected1(clusterVoxelProjected1[i].begin() + half_size, clusterVoxelProjected1[i].end());
+				size_t half_size = projected_voxels_by_cluster0[i].size() / 2;
+				vector<Point2f> halfClusterVoxelProjected0(projected_voxels_by_cluster0[i].begin() + half_size, projected_voxels_by_cluster0[i].end());
+				half_size = projected_voxels_by_cluster1[i].size() / 2;
+				vector<Point2f> halfClusterVoxelProjected1(projected_voxels_by_cluster1[i].begin() + half_size, projected_voxels_by_cluster1[i].end());
+				half_size = projected_voxels_by_cluster2[i].size() / 2;
+				vector<Point2f> halfClusterVoxelProjected2(projected_voxels_by_cluster2[i].begin() + half_size, projected_voxels_by_cluster2[i].end());
+				half_size = projected_voxels_by_cluster3[i].size() / 2;
+				vector<Point2f> halfClusterVoxelProjected3(projected_voxels_by_cluster3[i].begin() + half_size, projected_voxels_by_cluster3[i].end());
+
+				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected0.size());
+				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected1.size());
+				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected2.size());
+				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected3.size());
 
 				histograms0.push_back(colorModel(halfClusterVoxelProjected0, frame_rgb0, frame_hsv0));
 				histograms1.push_back(colorModel(halfClusterVoxelProjected1, frame_rgb1, frame_hsv1));
+				histograms2.push_back(colorModel(halfClusterVoxelProjected2, frame_rgb2, frame_hsv2));
+				histograms3.push_back(colorModel(halfClusterVoxelProjected3, frame_rgb3, frame_hsv3));
 			}
 
 			//waitKey(0);
 
 			double distance0;
 			double distance1;
+			double distance2;
+			double distance3;
+			vector<double> distances_per_camera;
 			int correspondingLabel[4];
-			int correspondingLabelReverse[4];
+			int correspondingLabelReversed[4];
 			vector<double> distance;
 			vector<vector<double>> distances;
 			vector<int> unavailableLabels;
 
 			distances.clear();
 			unavailableLabels.clear();
+			double sum_distances = 0;
 
 			for (int i = 0; i < 4; i++)
 			{
 				distance.clear();
 				for (int j = 0; j < 4; j++)
 				{
-					distance0 = compareHist(histograms0[j], offlineHistograms0[i], HISTCMP_CHISQR);
+					sum_distances = 0;
+					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 0 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 0){
+						sum_distances += compareHist(histograms0[j], offlineHistograms0[i], HISTCMP_CHISQR);
+					}
+					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 1 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 1) {
+						sum_distances += compareHist(histograms1[j], offlineHistograms1[i], HISTCMP_CHISQR);
+					}
+					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 2 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 2) {
+						sum_distances += compareHist(histograms2[j], offlineHistograms2[i], HISTCMP_CHISQR);
+					}
+					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 3 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 3) {
+						sum_distances += compareHist(histograms3[j], offlineHistograms3[i], HISTCMP_CHISQR);
+					}
+					/*distance0 = compareHist(histograms0[j], offlineHistograms0[i], HISTCMP_CHISQR);
 					distance1 = compareHist(histograms1[j], offlineHistograms1[i], HISTCMP_CHISQR);
-					distance.push_back(distance0 + distance1);
+					distance2 = compareHist(histograms2[j], offlineHistograms2[i], HISTCMP_CHISQR);
+					distance3 = compareHist(histograms3[j], offlineHistograms3[i], HISTCMP_CHISQR);
+					distances_per_camera.push_back(distance0);
+					distances_per_camera.push_back(distance1);
+					distances_per_camera.push_back(distance2);
+					distances_per_camera.push_back(distance3);
+					sum_distances = distances_per_camera[get_ordered_clusters(distances_per_camera)[0]] + distances_per_camera[get_ordered_clusters(distances_per_camera)[1]];*/
+					distance.push_back(sum_distances);
 				}
 				distances.push_back(distance);
 			}
@@ -470,26 +503,27 @@ namespace nl_uu_science_gmt
 					{
 						unavailableLabels.push_back(minElementIndex);
 						correspondingLabel[minElementIndex] = i;
-						correspondingLabelReverse[i] = minElementIndex;
+						correspondingLabelReversed[i] = minElementIndex;
 						found = true;
 					}
 					else {
-						distances[i][minElementIndex] = 99999999999;
+						distances[i][minElementIndex] = 99999999999999;
 					}
 				}
 			}
 
-			
+			m_trails0.push_back(new Point3f(centers[correspondingLabelReversed[0]].x, centers[correspondingLabelReversed[0]].y, 3));
+			m_trails1.push_back(new Point3f(centers[correspondingLabelReversed[1]].x, centers[correspondingLabelReversed[1]].y, 3));
+			m_trails2.push_back(new Point3f(centers[correspondingLabelReversed[2]].x, centers[correspondingLabelReversed[2]].y, 3));
+			m_trails3.push_back(new Point3f(centers[correspondingLabelReversed[3]].x, centers[correspondingLabelReversed[3]].y, 3));
 
-			m_trails0.push_back(new Point3f(centers[correspondingLabelReverse[0]].x, centers[correspondingLabelReverse[0]].y, 3));
-			m_trails1.push_back(new Point3f(centers[correspondingLabelReverse[1]].x, centers[correspondingLabelReverse[1]].y, 3));
-			m_trails2.push_back(new Point3f(centers[correspondingLabelReverse[2]].x, centers[correspondingLabelReverse[2]].y, 3));
-			m_trails3.push_back(new Point3f(centers[correspondingLabelReverse[3]].x, centers[correspondingLabelReverse[3]].y, 3));
-
+			for (int i = 0; i < 4; i++) {
+				positionOverTime[correspondingLabel[i]].push_back(centers[i]);
+			}
 
 			FileStorage fs("positionOverTime.yml", FileStorage::WRITE);
 			fs << "pos" + string(to_string(frame)) << positionOverTime;
-			
+
 
 			for (int i = 0; i < visible_voxels.size(); i++)
 			{
@@ -518,6 +552,115 @@ namespace nl_uu_science_gmt
 		}
 
 		m_visible_voxels.insert(m_visible_voxels.end(), visible_voxels.begin(), visible_voxels.end());
+	}
+
+	void Reconstructor::AddToProjection(cv::Mat& camera_shot, cv::Point2f voxel_position, std::vector<cv::Point2f> projected_voxels, cv::Vec3b black)
+	{
+		if (camera_shot.at<Vec3b>(voxel_position) == black)
+		{
+			camera_shot.at<Vec3b>(voxel_position) = Vec3b(200, 200, 200);
+			projected_voxels.push_back(voxel_position);
+		}
+	}
+
+	vector<nl_uu_science_gmt::Reconstructor::Voxel*> Reconstructor::determineVisibleVoxels()
+	{
+		vector<Voxel*> visible_voxels;
+		int voxel_index;
+#pragma omp parallel for schedule(static) private(v) shared(visible_voxels)
+		for (voxel_index = 0; voxel_index < (int)m_voxels_amount; ++voxel_index)
+		{
+			int camera_counter = 0;
+			Voxel* voxel = m_voxels[voxel_index];
+
+			for (size_t camera_index = 0; camera_index < m_cameras.size(); ++camera_index)
+			{
+				if (voxel->valid_camera_projection[camera_index])
+				{
+					const Point point = voxel->camera_projection[camera_index];
+
+					//If there's a white pixel on the foreground image at the projection point, add the camera
+					if (m_cameras[camera_index]->getForegroundImage().at<uchar>(point) == 255) ++camera_counter;
+				}
+			}
+
+			// If the voxel is present on all cameras
+			if (camera_counter == m_cameras.size())
+			{
+#pragma omp critical //push_back is critical
+				visible_voxels.push_back(voxel);
+				voxels2dCoordinates.push_back(Point2f(voxel->x, voxel->y));
+
+				voxelProjected0.push_back(m_cameras[0]->projectOnView(Point3f(voxel->x, voxel->y, voxel->z)));
+				voxelProjected1.push_back(m_cameras[1]->projectOnView(Point3f(voxel->x, voxel->y, voxel->z)));
+				voxelProjected2.push_back(m_cameras[2]->projectOnView(Point3f(voxel->x, voxel->y, voxel->z)));
+				voxelProjected3.push_back(m_cameras[3]->projectOnView(Point3f(voxel->x, voxel->y, voxel->z)));
+			}
+		}
+
+		return visible_voxels;
+	}
+
+	/// <summary>
+	/// Returns a vector of distances from the specified camera to the centers of the clusters.
+	/// </summary>
+	/// <param name="camera_index">The zero-based index of the camera.</param>
+	vector<double> Reconstructor::getDistancesFromCameraToCenters(int camera_index)
+	{
+		Point3f camera_location = m_cameras[camera_index]->getCameraLocation();
+		vector<double> camera_distances_to_centers;
+		for (int cluster_index = 0; cluster_index < 4; cluster_index++)
+		{
+			camera_distances_to_centers.push_back(norm(camera_location - Point3f(centers[cluster_index].x, centers[cluster_index].y, 0)));
+		}
+
+		return camera_distances_to_centers;
+	}
+
+	/// <summary>
+	/// Retrieves a frame from the speficied camera and returns the RGB and HSV representations.
+	/// </summary>
+	/// <param name="camera_index">The zero-based index of the camera.</param>
+	tuple<Mat, Mat> Reconstructor::getFrameColorValues(int camera_index)
+	{
+		Mat frame_rgb = m_cameras[camera_index]->getFrame();
+		Mat frame_hsv;
+		cvtColor(frame_rgb, frame_hsv, COLOR_BGR2HSV);
+
+		return make_tuple(frame_rgb, frame_hsv);
+	}
+
+	/// <summary>
+	/// Returns a vector of indices corresponding to the clusters, ordered by their distance to the camera, from closest to furthest.
+	/// </summary>
+	/// <param name="camera_distances_to_centers">A vector containing the distance from the camera to each of the clusters.</param>
+	vector<int> Reconstructor::get_ordered_clusters(vector<double> camera_distances_to_centers)
+	{
+		vector<int> clusters_ordered_by_distance(camera_distances_to_centers.size());
+		iota(clusters_ordered_by_distance.begin(), clusters_ordered_by_distance.end(), 0);
+		auto comparator = [&camera_distances_to_centers](int a, int b) { return camera_distances_to_centers[a] < camera_distances_to_centers[b]; };
+		sort(clusters_ordered_by_distance.begin(), clusters_ordered_by_distance.end(), comparator);
+
+		return clusters_ordered_by_distance;
+	}
+
+	void Reconstructor::ClearVectors()
+	{
+		voxels2dCoordinates.clear();
+		voxelProjected0.clear();
+		voxelProjected1.clear();
+		voxelProjected2.clear();
+		voxelProjected3.clear();
+		projected_voxels_by_cluster0.clear();
+		projected_voxels_by_cluster1.clear();
+		projected_voxels_by_cluster2.clear();
+		projected_voxels_by_cluster3.clear();
+		m_visible_voxels.clear();
+		visible_voxels_by_label.clear();
+		histograms0.clear();
+		histograms1.clear();
+		histograms2.clear();
+		histograms3.clear();
 	}
 
 
