@@ -237,7 +237,7 @@ namespace nl_uu_science_gmt
 		cvtColor(mask, mask, COLOR_BGR2GRAY);
 		threshold(mask, mask, 5, 255, THRESH_BINARY);
 
-		Mat element = getStructuringElement(MORPH_RECT, Size(9, 9));
+		Mat element = getStructuringElement(MORPH_RECT, Size(4, 4));
 		// dilation followed by erosion to close small gaps
 		morphologyEx(mask, mask, MORPH_CLOSE, element, Point(-1, -1));
 		Mat outFrame;
@@ -283,7 +283,7 @@ namespace nl_uu_science_gmt
 		ClearVectors();
 		frame += 1;
 		vector<Voxel*> visible_voxels = determineVisibleVoxels();
-
+		// clustering
 		kmeans(voxels2dCoordinates, 4, labels, TermCriteria(CV_TERMCRIT_EPS, 100, 0.01), 8, KMEANS_RANDOM_CENTERS, centers);
 
 		vector<double> camera0_distances_to_centers = getDistancesFromCameraToCenters(0);
@@ -309,7 +309,7 @@ namespace nl_uu_science_gmt
 			visible_voxels[i]->label = labels[i];
 			visible_voxels_by_label[labels[i]].push_back(i);
 		}
-
+		// calculate distance between clusters and cameras to determine the order, from closest to furthest away
 		vector<int> clusters_ordered_by_distance0 = get_ordered_clusters(camera0_distances_to_centers);
 		vector<int> clusters_ordered_by_distance1 = get_ordered_clusters(camera1_distances_to_centers);
 		vector<int> clusters_ordered_by_distance2 = get_ordered_clusters(camera2_distances_to_centers);
@@ -334,14 +334,17 @@ namespace nl_uu_science_gmt
 			projected_voxels_by_cluster2.push_back(clusterCoordinates);
 			projected_voxels_by_cluster3.push_back(clusterCoordinates);
 		}
-
+		// Occlusion mechanism: start filling up the vector with the voxels of the closest person, only add voxel if the corresponding pixel has not been used yet
 		for (int i = 0; i < 4; i++)
 		{
-			/*for (int voxel_index : visible_voxels_by_label[clusters_ordered_by_distance0[i]])
-			{
-				int cluster = clusters_ordered_by_distance0[i];
-				AddToProjection(cameraShot0, voxelProjected0[voxel_index], projected_voxels_by_cluster0[cluster], black);
-			}*/
+			Mat element = getStructuringElement(MORPH_RECT, Size(2, 2));
+			// dilation followed by erosion to close small gaps
+			morphologyEx(cameraShot0, cameraShot0, MORPH_CLOSE, element, Point(-1, -1));
+			morphologyEx(cameraShot1, cameraShot1, MORPH_CLOSE, element, Point(-1, -1));
+			morphologyEx(cameraShot2, cameraShot2, MORPH_CLOSE, element, Point(-1, -1));
+			morphologyEx(cameraShot3, cameraShot3, MORPH_CLOSE, element, Point(-1, -1));
+		
+			
 			for (int j : visible_voxels_by_label[clusters_ordered_by_distance0[i]])
 			{
 				if (cameraShot0.at<Vec3b>(voxelProjected0.at(j)) == black)
@@ -363,7 +366,7 @@ namespace nl_uu_science_gmt
 				if (cameraShot2.at<Vec3b>(voxelProjected2.at(j)) == black)
 				{
 					cameraShot2.at<Vec3b>(voxelProjected2.at(j)) = Vec3b(200, 200, 200);
-projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelProjected2[j]);
+					projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelProjected2[j]);
 				}
 			}
 			for (int j : visible_voxels_by_label[clusters_ordered_by_distance3[i]])
@@ -376,23 +379,24 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 			}
 		}
 
-		vector<double> doubVec;
-
-		vector<vector<double>> amountVisibleVoxelsPerCluster;
-		for (int i = 0; i < 4; i++) {
-			amountVisibleVoxelsPerCluster.push_back(doubVec);
-		}
-
+		
+		// save histograms to files if in offline mode
 		if (!online) {
-			if (frame == 63) {
+			if (frame == 44) {
 				for (int i = 0; i < 4; i++)
 				{
 					size_t half_size = projected_voxels_by_cluster0[i].size() / 2;
 					vector<Point2f> halfClusterVoxelProjected0(projected_voxels_by_cluster0[i].begin() + half_size, projected_voxels_by_cluster0[i].end());
-					half_size = projected_voxels_by_cluster1[i].size() / 2;
-					vector<Point2f> halfClusterVoxelProjected1(projected_voxels_by_cluster1[i].begin() + half_size, projected_voxels_by_cluster1[i].end());
 
 					histograms0.push_back(colorModel(halfClusterVoxelProjected0, frame_rgb0, frame_hsv0, i));
+				}
+			}
+			if (frame == 63) {
+				for (int i = 0; i < 4; i++)
+				{
+					size_t half_size = projected_voxels_by_cluster1[i].size() / 2;
+					vector<Point2f> halfClusterVoxelProjected1(projected_voxels_by_cluster1[i].begin() + half_size, projected_voxels_by_cluster1[i].end());
+
 					histograms1.push_back(colorModel(halfClusterVoxelProjected1, frame_rgb1, frame_hsv1, i + 10));
 				}
 			}
@@ -408,7 +412,7 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 				}
 			}
 
-			if (frame == 525) {
+			if (frame == 508) {
 				for (int i = 0; i < 4; i++)
 				{
 					size_t half_size = projected_voxels_by_cluster3[i].size() / 2;
@@ -430,19 +434,13 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 				half_size = projected_voxels_by_cluster3[i].size() / 2;
 				vector<Point2f> halfClusterVoxelProjected3(projected_voxels_by_cluster3[i].begin() + half_size, projected_voxels_by_cluster3[i].end());
 
-				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected0.size());
-				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected1.size());
-				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected2.size());
-				amountVisibleVoxelsPerCluster[i].push_back(halfClusterVoxelProjected3.size());
-
 				histograms0.push_back(colorModel(halfClusterVoxelProjected0, frame_rgb0, frame_hsv0));
 				histograms1.push_back(colorModel(halfClusterVoxelProjected1, frame_rgb1, frame_hsv1));
 				histograms2.push_back(colorModel(halfClusterVoxelProjected2, frame_rgb2, frame_hsv2));
 				histograms3.push_back(colorModel(halfClusterVoxelProjected3, frame_rgb3, frame_hsv3));
 			}
 
-			//waitKey(0);
-
+			// calculate histogram differences to match the offline models with the online ones
 			double distance0;
 			double distance1;
 			double distance2;
@@ -463,20 +461,10 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 				distance.clear();
 				for (int j = 0; j < 4; j++)
 				{
+					distances_per_camera.clear();
 					sum_distances = 0;
-					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 0 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 0){
-						sum_distances += compareHist(histograms0[j], offlineHistograms0[i], HISTCMP_CHISQR);
-					}
-					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 1 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 1) {
-						sum_distances += compareHist(histograms1[j], offlineHistograms1[i], HISTCMP_CHISQR);
-					}
-					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 2 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 2) {
-						sum_distances += compareHist(histograms2[j], offlineHistograms2[i], HISTCMP_CHISQR);
-					}
-					if (get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[3] == 3 || get_ordered_clusters(amountVisibleVoxelsPerCluster[j])[2] == 3) {
-						sum_distances += compareHist(histograms3[j], offlineHistograms3[i], HISTCMP_CHISQR);
-					}
-					/*distance0 = compareHist(histograms0[j], offlineHistograms0[i], HISTCMP_CHISQR);
+					
+					distance0 = compareHist(histograms0[j], offlineHistograms0[i], HISTCMP_CHISQR);
 					distance1 = compareHist(histograms1[j], offlineHistograms1[i], HISTCMP_CHISQR);
 					distance2 = compareHist(histograms2[j], offlineHistograms2[i], HISTCMP_CHISQR);
 					distance3 = compareHist(histograms3[j], offlineHistograms3[i], HISTCMP_CHISQR);
@@ -484,7 +472,8 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 					distances_per_camera.push_back(distance1);
 					distances_per_camera.push_back(distance2);
 					distances_per_camera.push_back(distance3);
-					sum_distances = distances_per_camera[get_ordered_clusters(distances_per_camera)[0]] + distances_per_camera[get_ordered_clusters(distances_per_camera)[1]];*/
+					sum_distances = distances_per_camera[get_ordered_clusters(distances_per_camera)[0]] + distances_per_camera[get_ordered_clusters(distances_per_camera)[1]];
+					
 					distance.push_back(sum_distances);
 				}
 				distances.push_back(distance);
@@ -507,11 +496,11 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 						found = true;
 					}
 					else {
-						distances[i][minElementIndex] = 99999999999999;
+						distances[i][minElementIndex] = 99999999999999999;
 					}
 				}
 			}
-
+			// position of clusters in time, on the floor
 			m_trails0.push_back(new Point3f(centers[correspondingLabelReversed[0]].x, centers[correspondingLabelReversed[0]].y, 3));
 			m_trails1.push_back(new Point3f(centers[correspondingLabelReversed[1]].x, centers[correspondingLabelReversed[1]].y, 3));
 			m_trails2.push_back(new Point3f(centers[correspondingLabelReversed[2]].x, centers[correspondingLabelReversed[2]].y, 3));
@@ -524,7 +513,7 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 			FileStorage fs("positionOverTime.yml", FileStorage::WRITE);
 			fs << "pos" + string(to_string(frame)) << positionOverTime;
 
-
+			// assign correct label
 			for (int i = 0; i < visible_voxels.size(); i++)
 			{
 				if (visible_voxels[i]->label == 0)
@@ -552,6 +541,7 @@ projected_voxels_by_cluster2[clusters_ordered_by_distance2[i]].push_back(voxelPr
 		}
 
 		m_visible_voxels.insert(m_visible_voxels.end(), visible_voxels.begin(), visible_voxels.end());
+		
 	}
 
 	void Reconstructor::AddToProjection(cv::Mat& camera_shot, cv::Point2f voxel_position, std::vector<cv::Point2f> projected_voxels, cv::Vec3b black)
